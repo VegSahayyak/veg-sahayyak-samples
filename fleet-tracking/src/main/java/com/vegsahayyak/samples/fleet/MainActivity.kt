@@ -33,7 +33,7 @@ import com.vegsahayyak.speedcore.data.location.SpeedData
 
 /**
  * =========================================================================================
- * Veg Sahayyak SDK - Sample: Fleet Tracking & Regulatory Telematics
+ * Veg Sahayyak SDK - Sample 2: Fleet Tracking & Regulatory Telematics
  * =========================================================================================
  *
  * This sample demonstrates how enterprise fleet management systems integrate the Veg Sahayyak
