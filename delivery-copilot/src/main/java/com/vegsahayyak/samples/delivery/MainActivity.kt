@@ -57,10 +57,11 @@ import kotlin.math.roundToInt
  * Core Pillars:
  * 1. Portrait-Only Ergonomics: Optimized for handlebar-mounted phone holders.
  * 2. Glare-Resistant, Subtle Natural Palette: High daylight contrast without distracting the rider.
- * 3. Hands-Free Voice Commands (:speed-ui): Change limits and road safety modes while keeping hands on handlebars.
- * 4. Floating PiP Navigation Overlay (:speed-overlay): Draggable speed bubble over Google Maps & delivery partner apps.
- * 5. Rider Safety & Fatigue Monitor: Track shift duration, safe-riding compliance, and fatigue alerts.
- * 6. Delivery Bench Simulator: Allows full desktop verification without riding.
+ * 3. Live GPS Telematics Stream: Reads speed and accuracy directly from the hardware GPS engine via [SpeedAssistant.observeFlow].
+ * 4. Hands-Free Voice Commands (:speed-ui): Change limits and road safety modes while keeping hands on handlebars.
+ * 5. Floating PiP Navigation Overlay (:speed-overlay): Draggable speed bubble over Google Maps & delivery partner apps.
+ * 6. Rider Safety & Fatigue Monitor: Track shift duration, safe-riding compliance, and fatigue alerts.
+ * 7. Delivery Bench Simulator: Allows desk evaluation without riding when toggled on.
  */
 
 // Delivery Co-Pilot Color Palette (Subtle, Aviation-grade, Low Glare)
@@ -108,7 +109,7 @@ enum class DeliveryHazardZone(
         title = "Market / School",
         speedLimitKmh = 25f,
         description = "Dense pedestrian zone & alley navigation",
-        profile = DrivingProfile.SchoolZone
+        profile = DrivingProfile.Bicycle
     )
 }
 
@@ -151,26 +152,34 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         val fineLocation = results[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        if (fineLocation) {
-            SpeedAssistant.with(this, deliveryLicenseToken).start()
+        val coarseLocation = results[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        if (fineLocation || coarseLocation) {
+            initializeTelematicsSdk(DrivingProfile.CarCity)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize Veg Sahayyak SDK with cryptographically verified token
-        try {
-            SpeedAssistant.with(this, deliveryLicenseToken)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Request initial runtime permissions
-        requestRequiredPermissions()
+        // Ensure location permissions and start the GPS tracking engine immediately
+        checkPermissionsAndStart()
 
         setContent {
             DeliveryCoPilotScreen(
+                onProfileChanged = { profile ->
+                    SpeedAssistant.with(this, deliveryLicenseToken)
+                        .setDrivingProfile(profile)
+                        .start()
+                },
+                onLimitChanged = { limit ->
+                    try {
+                        SpeedAssistant.with(this, deliveryLicenseToken)
+                            .preferences
+                            .setWarningSpeedThreshold(limit)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                },
                 onLaunchOverlay = { launchFloatingOverlay() },
                 onStopOverlay = { stopFloatingOverlay() },
                 hasOverlayPermission = { canDrawOverlays() },
@@ -179,17 +188,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestRequiredPermissions() {
-        val permissions = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions.add(Manifest.permission.RECORD_AUDIO)
+    private fun checkPermissionsAndStart() {
+        val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarseLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val hasAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+
+        if (fineLocation == PackageManager.PERMISSION_GRANTED || coarseLocation == PackageManager.PERMISSION_GRANTED) {
+            initializeTelematicsSdk(DrivingProfile.CarCity)
+        } else {
+            val list = mutableListOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+            if (hasAudio != PackageManager.PERMISSION_GRANTED) {
+                list.add(Manifest.permission.RECORD_AUDIO)
+            }
+            permissionLauncher.launch(list.toTypedArray())
         }
-        permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    private fun initializeTelematicsSdk(profile: DrivingProfile) {
+        try {
+            SpeedAssistant.with(this, deliveryLicenseToken)
+                .setDrivingProfile(profile)
+                .start()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun canDrawOverlays(): Boolean {
@@ -227,6 +252,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun DeliveryCoPilotScreen(
+    onProfileChanged: (DrivingProfile) -> Unit,
+    onLimitChanged: (Float) -> Unit,
     onLaunchOverlay: () -> Unit,
     onStopOverlay: () -> Unit,
     hasOverlayPermission: () -> Boolean,
@@ -235,14 +262,64 @@ fun DeliveryCoPilotScreen(
     val coroutineScope = rememberCoroutineScope()
 
     // Telematics State
-    var isTrackingActive by remember { mutableStateOf(true) }
     var speedLimitKmh by remember { mutableStateOf(45f) }
     var selectedHazardZone by remember { mutableStateOf(DeliveryHazardZone.URBAN_DELIVERY) }
 
-    // Simulator State (for desk testing)
-    var isSimulatorMode by remember { mutableStateOf(true) }
+    // Live GPS Telematics Stream from SpeedAssistant
+    val speedState by SpeedAssistant.observeFlow()
+        .collectAsState(initial = SpeedData.SpeedUnavailable)
+
+    var lastValidLiveSpeedKmh by remember { mutableFloatStateOf(0f) }
+
+    val liveSpeedKmh = when (val state = speedState) {
+        is SpeedData.SpeedChanged -> {
+            val rawKmh = (state.speedMps * 3.6f).coerceAtLeast(0f)
+            // Filter out unrealistic teleportation leaps (> 180 km/h) from cell/wifi jumps
+            if (rawKmh in 0f..180f) {
+                lastValidLiveSpeedKmh = rawKmh
+                rawKmh
+            } else {
+                lastValidLiveSpeedKmh
+            }
+        }
+        else -> 0f
+    }
+
+    val liveGpsAccuracy = when (val state = speedState) {
+        is SpeedData.SpeedChanged -> state.accuracyMeters
+        else -> -1f
+    }
+
+    val liveIsOverLimit = when (val state = speedState) {
+        is SpeedData.SpeedChanged -> {
+            if ((state.speedMps * 3.6f) in 0f..180f) state.isOverLimit else false
+        }
+        else -> false
+    }
+
+    val gpsStatusLabel = when (val state = speedState) {
+        is SpeedData.SpeedChanged -> {
+            if (state.accuracyMeters <= 5f) "GPS: ±${state.accuracyMeters.roundToInt()}m (Excellent)"
+            else if (state.accuracyMeters <= 15f) "GPS: ±${state.accuracyMeters.roundToInt()}m (Good)"
+            else "GPS: ±${state.accuracyMeters.roundToInt()}m (Fair)"
+        }
+        is SpeedData.LowAccuracy -> "GPS: Weak Signal (${state.reason})"
+        is SpeedData.SpeedUnavailable -> "GPS: Acquiring Satellites..."
+        is SpeedData.GPSDisabled -> "GPS: Signal Lost / Searching"
+        is SpeedData.Disabled -> "GPS: Standby"
+    }
+
+    // Simulator State (defaults to FALSE so app reads from LIVE GPS!)
+    var isSimulatorMode by remember { mutableStateOf(false) }
     var simulatedSpeedKmh by remember { mutableFloatStateOf(42f) }
     var simulatedGpsAccuracy by remember { mutableFloatStateOf(3f) }
+
+    // Active speed and telematics source resolution
+    val effectiveSpeed = if (isSimulatorMode) simulatedSpeedKmh else liveSpeedKmh
+    val effectiveAccuracy = if (isSimulatorMode) simulatedGpsAccuracy else liveGpsAccuracy
+    val isOverLimit = if (isSimulatorMode) (effectiveSpeed > speedLimitKmh) else (effectiveSpeed > speedLimitKmh || liveIsOverLimit)
+    val isApproaching = effectiveSpeed in (speedLimitKmh - 5f)..speedLimitKmh
+    val isTrackingActive = if (isSimulatorMode) true else (speedState is SpeedData.SpeedChanged)
 
     // Rider Shift & Fatigue Tracking
     var shiftSeconds by remember { mutableLongStateOf(4820L) } // ~1h 20m default
@@ -258,10 +335,6 @@ fun DeliveryCoPilotScreen(
             shiftSeconds++
         }
     }
-
-    val effectiveSpeed = if (isSimulatorMode) simulatedSpeedKmh else 0f
-    val isOverLimit = effectiveSpeed > speedLimitKmh
-    val isApproaching = effectiveSpeed in (speedLimitKmh - 5f)..speedLimitKmh
 
     val speedStatusColor by animateColorAsState(
         targetValue = when {
@@ -289,6 +362,7 @@ fun DeliveryCoPilotScreen(
                     when (action) {
                         is VoiceAction.SetMaxLimit -> {
                             speedLimitKmh = action.limit
+                            onLimitChanged(action.limit)
                             lastVoiceTranscript = "Speed limit updated: ${action.limit.roundToInt()} km/h"
                         }
                         is VoiceAction.SetMinLimit -> {
@@ -314,7 +388,7 @@ fun DeliveryCoPilotScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
 
-            // Top Status Bar (App Title & Active Order Status)
+            // Top Status Bar (App Title & Active Telematics Source Status)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -329,26 +403,34 @@ fun DeliveryCoPilotScreen(
                         letterSpacing = 0.5.sp
                     )
                     Text(
-                        text = "Two-Wheeler Safety & Telematics (:speed-overlay)",
+                        text = if (isSimulatorMode) "CAN-Bus Bench Simulator (:speed-core)" else "Hardware GPS Telematics (:speed-core)",
                         fontSize = 11.sp,
-                        color = CoPilotColors.AviationSky,
+                        color = if (isSimulatorMode) CoPilotColors.CautionAmber else CoPilotColors.AviationSky,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
-                // Active Shift Status Pill
+                // Active Source Pill
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(CoPilotColors.SafeMint.copy(alpha = 0.15f))
-                        .border(1.dp, CoPilotColors.SafeMint.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .background(
+                            if (isSimulatorMode) CoPilotColors.CautionAmber.copy(alpha = 0.15f)
+                            else CoPilotColors.SafeMint.copy(alpha = 0.15f)
+                        )
+                        .border(
+                            1.dp,
+                            if (isSimulatorMode) CoPilotColors.CautionAmber.copy(alpha = 0.4f)
+                            else CoPilotColors.SafeMint.copy(alpha = 0.4f),
+                            RoundedCornerShape(12.dp)
+                        )
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(
-                        text = "ON SHIFT",
+                        text = if (isSimulatorMode) "SIMULATOR" else "LIVE GPS",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = CoPilotColors.SafeMint,
+                        color = if (isSimulatorMode) CoPilotColors.CautionAmber else CoPilotColors.SafeMint,
                         letterSpacing = 1.sp
                     )
                 }
@@ -435,7 +517,7 @@ fun DeliveryCoPilotScreen(
                         )
                     }
 
-                    // Large High-Glance Speed Number
+                    // Large High-Glance Speed Number (Directly from GPS or Simulator)
                     Text(
                         text = effectiveSpeed.roundToInt().toString(),
                         fontFamily = FontFamily.Default,
@@ -454,12 +536,21 @@ fun DeliveryCoPilotScreen(
                         letterSpacing = 2.sp
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    // Live GPS Accuracy & Satellite Fix
+                    Text(
+                        text = if (isSimulatorMode) "SIMULATOR: ±${simulatedGpsAccuracy.roundToInt()}m" else gpsStatusLabel,
+                        fontSize = 11.sp,
+                        color = if (isSimulatorMode || speedState is SpeedData.SpeedChanged) CoPilotColors.SafeMint else CoPilotColors.CautionAmber,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     // Speed Regulation Bar
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth(0.85f)
+                            .fillMaxWidth(0.88f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(CoPilotColors.SlateSurface)
                             .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -679,6 +770,8 @@ fun DeliveryCoPilotScreen(
                             onClick = {
                                 selectedHazardZone = zone
                                 speedLimitKmh = zone.speedLimitKmh
+                                onProfileChanged(zone.profile)
+                                onLimitChanged(zone.speedLimitKmh)
                             }
                         )
                     }
@@ -695,6 +788,8 @@ fun DeliveryCoPilotScreen(
                             onClick = {
                                 selectedHazardZone = zone
                                 speedLimitKmh = zone.speedLimitKmh
+                                onProfileChanged(zone.profile)
+                                onLimitChanged(zone.speedLimitKmh)
                             }
                         )
                     }
@@ -784,7 +879,9 @@ fun DeliveryCoPilotScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isSimulatorMode = !isSimulatorMode },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -796,9 +893,9 @@ fun DeliveryCoPilotScreen(
                             color = CoPilotColors.TextPrimary
                         )
                         Text(
-                            text = "Bench testing for desk evaluation",
+                            text = if (isSimulatorMode) "Simulator active (Overrides live GPS)" else "Disabled (Reading real GPS)",
                             fontSize = 10.sp,
-                            color = CoPilotColors.TextMuted
+                            color = if (isSimulatorMode) CoPilotColors.CautionAmber else CoPilotColors.SafeMint
                         )
                     }
 
