@@ -213,6 +213,7 @@ fun CustomBrandUiApp() {
     // Desk testing simulator state
     var isSimulationMode by remember { mutableStateOf(true) }
     var simulatedSpeedKmh by remember { mutableFloatStateOf(55f) }
+    var simulatedGpsAccuracy by remember { mutableFloatStateOf(3.2f) }
     var isHudMirrored by remember { mutableStateOf(false) }
 
     // Regulatory speed threshold (e.g. 80 km/h)
@@ -227,10 +228,16 @@ fun CustomBrandUiApp() {
         else -> 0f
     }
 
-    // Determine effective speed depending on simulator toggle
+    // Determine effective speed and GPS accuracy depending on simulator toggle
     val effectiveSpeed = if (isSimulationMode) simulatedSpeedKmh else liveSpeedKmh
     val isTrackingActive = if (isSimulationMode) true else (speedState is SpeedData.SpeedChanged)
     val isOverLimit = effectiveSpeed > warningSpeedLimit
+    val gpsAccuracyMeters = when {
+        isSimulationMode -> simulatedGpsAccuracy
+        speedState is SpeedData.SpeedChanged -> (speedState as SpeedData.SpeedChanged).accuracyMeters
+        speedState is SpeedData.LowAccuracy -> 30f
+        else -> -1f
+    }
 
     // Detect device orientation to provide adaptive split-screen layout on tablets
     val configuration = LocalConfiguration.current
@@ -269,6 +276,7 @@ fun CustomBrandUiApp() {
                                     warningSpeed = warningSpeedLimit,
                                     isTrackingActive = isTrackingActive,
                                     isOverLimit = isOverLimit,
+                                    gpsAccuracyMeters = gpsAccuracyMeters,
                                     modifier = Modifier.fillMaxSize(),
                                     themeMode = ThemeMode.DARK_GRAY,
                                     colorScheme = selectedPalette.scheme
@@ -282,6 +290,7 @@ fun CustomBrandUiApp() {
                                     isTrackingActive = isTrackingActive,
                                     isOverLimit = isOverLimit,
                                     isMirrored = isHudMirrored,
+                                    gpsAccuracyMeters = gpsAccuracyMeters,
                                     onToggleMirror = { isHudMirrored = !isHudMirrored },
                                     modifier = Modifier.fillMaxSize(),
                                     colorScheme = selectedPalette.scheme
@@ -306,6 +315,8 @@ fun CustomBrandUiApp() {
                             onToggleSimulation = { isSimulationMode = it },
                             simulatedSpeedKmh = simulatedSpeedKmh,
                             onSpeedChange = { simulatedSpeedKmh = it },
+                            simulatedGpsAccuracy = simulatedGpsAccuracy,
+                            onGpsAccuracyChange = { simulatedGpsAccuracy = it },
                             effectiveSpeed = effectiveSpeed,
                             warningLimit = warningSpeedLimit,
                             palette = selectedPalette
@@ -343,6 +354,7 @@ fun CustomBrandUiApp() {
                                     warningSpeed = warningSpeedLimit,
                                     isTrackingActive = isTrackingActive,
                                     isOverLimit = isOverLimit,
+                                    gpsAccuracyMeters = gpsAccuracyMeters,
                                     modifier = Modifier.fillMaxSize(),
                                     themeMode = ThemeMode.DARK_GRAY,
                                     colorScheme = selectedPalette.scheme
@@ -355,6 +367,7 @@ fun CustomBrandUiApp() {
                                     isTrackingActive = isTrackingActive,
                                     isOverLimit = isOverLimit,
                                     isMirrored = isHudMirrored,
+                                    gpsAccuracyMeters = gpsAccuracyMeters,
                                     onToggleMirror = { isHudMirrored = !isHudMirrored },
                                     modifier = Modifier.fillMaxSize(),
                                     colorScheme = selectedPalette.scheme
@@ -369,6 +382,8 @@ fun CustomBrandUiApp() {
                         onToggleSimulation = { isSimulationMode = it },
                         simulatedSpeedKmh = simulatedSpeedKmh,
                         onSpeedChange = { simulatedSpeedKmh = it },
+                        simulatedGpsAccuracy = simulatedGpsAccuracy,
+                        onGpsAccuracyChange = { simulatedGpsAccuracy = it },
                         effectiveSpeed = effectiveSpeed,
                         warningLimit = warningSpeedLimit,
                         palette = selectedPalette
@@ -384,38 +399,18 @@ fun CustomBrandUiApp() {
  */
 @Composable
 private fun HeaderSection(palette: BrandPalette) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text(
-                text = "Sample 4: Custom Brand UI",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Text(
-                text = "B2B White-Label Compose Components",
-                fontSize = 11.sp,
-                color = palette.accentColor
-            )
-        }
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(palette.cardColor)
-                .border(1.dp, palette.accentColor.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            Text(
-                text = palette.brandName,
-                color = palette.accentColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Custom Brand UI",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Text(
+            text = "B2B White-Label Compose Components",
+            fontSize = 12.sp,
+            color = palette.accentColor
+        )
     }
 }
 
@@ -528,6 +523,8 @@ private fun DeskSimulatorControls(
     onToggleSimulation: (Boolean) -> Unit,
     simulatedSpeedKmh: Float,
     onSpeedChange: (Float) -> Unit,
+    simulatedGpsAccuracy: Float,
+    onGpsAccuracyChange: (Float) -> Unit,
     effectiveSpeed: Float,
     warningLimit: Float,
     palette: BrandPalette
@@ -654,6 +651,71 @@ private fun DeskSimulatorControls(
                     inactiveTrackColor = Color.White.copy(alpha = 0.15f)
                 )
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // GPS Signal Simulation Selector
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "GPS ACCURACY STATUS",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.6f),
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = when {
+                        simulatedGpsAccuracy < 0f -> "No Fix (--)"
+                        simulatedGpsAccuracy <= 5f -> "±${simulatedGpsAccuracy.roundToInt()}m (Good)"
+                        simulatedGpsAccuracy <= 20f -> "±${simulatedGpsAccuracy.roundToInt()}m (Fair)"
+                        else -> "±${simulatedGpsAccuracy.roundToInt()}m (Weak)"
+                    },
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        simulatedGpsAccuracy < 0f -> Color.Gray
+                        simulatedGpsAccuracy <= 5f -> Color(0xFF00E676)
+                        simulatedGpsAccuracy <= 20f -> Color(0xFFFFB300)
+                        else -> Color(0xFFFF1744)
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val gpsPresets = listOf(
+                    Pair("Good (±3m)", 3.2f),
+                    Pair("Fair (±12m)", 12f),
+                    Pair("Weak (±35m)", 35f),
+                    Pair("No Fix", -1f)
+                )
+                gpsPresets.forEach { (label, accVal) ->
+                    val isAccActive = (simulatedGpsAccuracy == accVal)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isAccActive) palette.accentColor.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+                            .border(1.dp, if (isAccActive) palette.accentColor else Color.Transparent, RoundedCornerShape(6.dp))
+                            .clickable { onGpsAccuracyChange(accVal) }
+                            .padding(vertical = 5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 9.sp,
+                            fontWeight = if (isAccActive) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isAccActive) palette.accentColor else Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
