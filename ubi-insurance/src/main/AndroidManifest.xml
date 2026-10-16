@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Zero permissions declared here! 
-         The SDK's Manifest Merger handles location permissions automatically. -->
+    <!-- Explicit location permissions for runtime telematics tracking -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_veg_sahayyak_logo"
         android:label="UBI Insurance"
-        
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
