@@ -6,7 +6,7 @@ Welcome to the official repository of integration sample applications for the **
 
 ## 🗂️ Sample Applications Overview
 
-This multi-module Android Studio project contains 6 self-contained app modules, ordered from basic to advanced:
+This multi-module Android Studio project contains 7 self-contained app modules, ordered from basic to advanced:
 
 | App Module | Complexity | Description | Package ID | Required SDK Modules |
 | :--- | :---: | :--- | :--- | :--- |
@@ -16,6 +16,7 @@ This multi-module Android Studio project contains 6 self-contained app modules, 
 | [📁 **background-service**](./background-service/) | 🟠 *Advanced* | Zero-touch background tracking. Uses Google Play Activity Recognition to auto-launch telematics the moment the vehicle begins moving. | `com.vegsahayyak.samples.background` | `:speed-core`, `:speed-autostart` |
 | [📁 **custom-ui**](./custom-ui/) | 🟠 *Advanced* | White-label custom branding. Demonstrates dynamic gauge theming with `SpeedUiColorScheme` and high-performance Canvas gauge rendering. | `com.vegsahayyak.samples.customui` | `:speed-core`, `:speed-ui` |
 | [📁 **oem-automotive**](./oem-automotive/) | 🔴 *Complex* | In-vehicle dashboard. Features landscape HUD mirroring and Picture-in-Picture (PiP) Floating Overlays on top of Google Maps or custom navigation. | `com.vegsahayyak.samples.oem` | `:speed-core`, `:speed-ui`, `:speed-overlay` |
+| [📁 **delivery-copilot**](./delivery-copilot/) | 🔴 *Complex* | Two-wheeler last-mile delivery pilot assistant. Features hands-free voice commands, floating PiP speed bubble over navigation apps, weather hazard profiles, and rider fatigue monitoring. | `com.vegsahayyak.samples.delivery` | `:speed-core`, `:speed-ui`, `:speed-overlay` |
 
 ---
 
