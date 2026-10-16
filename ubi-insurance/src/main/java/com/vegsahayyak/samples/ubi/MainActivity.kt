@@ -7,7 +7,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,13 +17,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.vegsahayyak.speedcore.api.SpeedAssistant
 import com.vegsahayyak.speedcore.api.DrivingProfile
-import com.vegsahayyak.speedcore.internal.SpeedCoreInternal
-import kotlinx.coroutines.flow.map
+import com.vegsahayyak.speedcore.data.location.SpeedData
 
 class MainActivity : ComponentActivity() {
 
-    // Your commercial B2B insurance license key
-    private val insuranceEnterpriseJwt = "eyJhbGciOiJSUzI1NiIs..."
+    // Commercial B2B insurance license key for UBI sample
+    private val insuranceEnterpriseJwt = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbGllbnRfaWQiOiJWZWcgU2FoYXl5YWsgU2FtcGxlIC0gVUJJIEluc3VyYW5jZSIsInBhY2thZ2VfbmFtZSI6ImNvbS52ZWdzYWhheXlhay5zYW1wbGVzLnViaSIsImV4cCI6MjA4Mjc1ODQwMCwibW9kdWxlcyI6WyJzcGVlZC1jb3JlIl0sIm1heF9kZXZpY2VzIjotMSwibWF4X29mZmxpbmVfZGF5cyI6MzY1LCJ1bmxpbWl0ZWQiOnRydWUsImlzcyI6InZlZ19zYWhheXlha19hZG1pbiIsImlhdCI6MTc5MTk5OTk2Nn0.NzhHmq2xPwAKmFyumgaqd_zfQmNsy1_ViIfR2uF5NRpV8MgFoT4Upth1ayO5G0kGuq_id5V0m68pXqMKdZFRYr62DfPwuial9-qOgoHDEU8wPKFACqMoMsLseG7WWscAeGYSC2Uuq20tDLYj8RZDA5RHT3PM_iUWZTlmJD6yGxL2NoobJM085nJUYvqs5TH1-88-vd_Ii6aifBURHYQeaiX7J9J0qin_Jp8jQCqCUudpWU-QIH7-AtexkgOVoqAerFNUNZsEKe5MTJfNLhHFpTkrVhc6G2DJ_fwHnR-ITdlAvjEGKxwZeZG_czWr6pRQ9oZYtUJwP0MZxc5ue4-n4w"
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -44,9 +42,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             // Listen specifically for the speeding metric to build a risk profile
-            val isSpeeding by SpeedCoreInternal.speedRepository?.observeFlow()
-                ?.map { it.isSpeeding }
-                ?.collectAsState(initial = false) ?: remember { mutableStateOf(false) }
+            val speedState by SpeedAssistant.observeFlow()
+                .collectAsState(initial = SpeedData.SpeedUnavailable)
+
+            val isSpeeding = (speedState as? SpeedData.SpeedChanged)?.isOverLimit ?: false
+            val speedKmh = when (val state = speedState) {
+                is SpeedData.SpeedChanged -> state.speedMps * 3.6f
+                else -> 0f
+            }
 
             // A simple UBI risk score simulation: Increase risk while speeding
             var riskScore by remember { mutableStateOf(0) }
@@ -57,7 +60,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             
-            val bgColor = if (isSpeeding) Color(0x66FF0000) else MaterialTheme.colorScheme.background
+            val bgColor = if (isSpeeding) Color(0x33FF0000) else MaterialTheme.colorScheme.background
 
             MaterialTheme {
                 Surface(
@@ -80,6 +83,14 @@ class MainActivity : ComponentActivity() {
                             text = "$riskScore Points",
                             style = MaterialTheme.typography.displayLarge,
                             color = if (riskScore > 10) Color.Red else MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "${"%.1f".format(speedKmh)} km/h",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         
                         Spacer(modifier = Modifier.height(32.dp))

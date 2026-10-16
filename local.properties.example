@@ -1,0 +1,8 @@
+## Veg Sahayyak SDK - Sample Apps Configuration
+# Path to your local Android SDK installation:
+sdk.dir=/path/to/your/Android/Sdk
+
+# GitHub Packages Authentication
+# Required to resolve and download the Veg Sahayyak SDK AARs:
+gpr.user=YOUR_GITHUB_USERNAME
+gpr.key=ghp_YOUR_PERSONAL_ACCESS_TOKEN

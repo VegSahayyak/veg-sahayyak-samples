@@ -4,9 +4,9 @@
     
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_veg_sahayyak_logo"
         android:label="Fleet Tracking"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         

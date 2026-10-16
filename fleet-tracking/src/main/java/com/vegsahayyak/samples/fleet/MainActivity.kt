@@ -15,12 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.vegsahayyak.speedcore.api.SpeedAssistant
-import com.vegsahayyak.speedcore.internal.SpeedCoreInternal
+import com.vegsahayyak.speedcore.data.location.SpeedData
 
 class MainActivity : ComponentActivity() {
 
-    // Your commercial B2B license key provided by Veg Sahayyak
-    private val fleetEnterpriseJwt = "eyJhbGciOiJSUzI1NiIs..."
+    // Commercial B2B license key for Fleet Tracking sample
+    private val fleetEnterpriseJwt = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbGllbnRfaWQiOiJWZWcgU2FoYXl5YWsgU2FtcGxlIC0gRmxlZXQgVHJhY2tpbmciLCJwYWNrYWdlX25hbWUiOiJjb20udmVnc2FoYXl5YWsuc2FtcGxlcy5mbGVldCIsImV4cCI6MjA4Mjc1ODQwMCwibW9kdWxlcyI6WyJzcGVlZC1jb3JlIl0sIm1heF9kZXZpY2VzIjotMSwibWF4X29mZmxpbmVfZGF5cyI6MzY1LCJ1bmxpbWl0ZWQiOnRydWUsImlzcyI6InZlZ19zYWhheXlha19hZG1pbiIsImlhdCI6MTc5MTk5OTk2Nn0.Eyevuvzgs10eHy63PjSAhf1YJYgaNrsGzH7mZU9fDz2vbTbw02likrdwnxbehVeTLXBRR0SCNCsN-lizIxekc86bXcKM4fZCBWjGX6lUdw76CODrzS2xrJBu_rMuamoYu0q9ChdInkpOMMKqzCJbSiSAUvgqk3DsA4SptrXQEQOHcIdEuF_dfeLwFZ-EREY2GdKcnA6W6UkBxhn4flAS0X09vSwSmIXWc62_drAuNheS5grqYjiWIfAc2dLJCxuw-D7arTB3pPI6Whw5tYDnYaosSTDGyNGbOTiYTSrR5PgsWo1V-DV2L1ltdRjopjDjYmqAqf22p1joDjSiokeG9g"
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -39,9 +39,16 @@ class MainActivity : ComponentActivity() {
         checkPermissionsAndStart()
 
         setContent {
-            // Listen for offline-first telemetry syncing metrics
-            val unsyncedViolations by SpeedCoreInternal.telemetryManager?.observeUnsyncedCount()
-                ?.collectAsState(initial = 0) ?: remember { mutableStateOf(0) }
+            // Listen to real-time telematics stream
+            val speedState by SpeedAssistant.observeFlow()
+                .collectAsState(initial = SpeedData.SpeedUnavailable)
+
+            val speedKmh = when (val state = speedState) {
+                is SpeedData.SpeedChanged -> state.speedMps * 3.6f
+                else -> 0f
+            }
+            val isOverLimit = (speedState as? SpeedData.SpeedChanged)?.isOverLimit ?: false
+            val isUnderLimit = (speedState as? SpeedData.SpeedChanged)?.isUnderLimit ?: false
 
             MaterialTheme {
                 Surface(
@@ -55,21 +62,38 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("🚚 Fleet Management", style = MaterialTheme.typography.headlineMedium)
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("Custom Regulatory Truck Thresholds")
+                        Text("Custom Regulatory Truck Thresholds (20 - 80 km/h)")
                         
-                        Spacer(modifier = Modifier.height(48.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Text(
+                            text = "${"%.1f".format(speedKmh)} km/h",
+                            style = MaterialTheme.typography.displayLarge,
+                            color = when {
+                                isOverLimit -> MaterialTheme.colorScheme.error
+                                isUnderLimit -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(32.dp))
                         
-                        // Displaying the offline-first telemetry queue
                         Card(modifier = Modifier.padding(16.dp)) {
                             Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Offline Telemetry Queue", style = MaterialTheme.typography.titleMedium)
+                                Text("Regulatory Status", style = MaterialTheme.typography.titleMedium)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "$unsyncedViolations Pending Syncs",
-                                    style = MaterialTheme.typography.displaySmall,
-                                    color = if (unsyncedViolations > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    text = when {
+                                        isOverLimit -> "⚠️ OVER TRUCK LIMIT (> 80 km/h)"
+                                        isUnderLimit -> "🐢 BELOW MIN SPEED (< 20 km/h)"
+                                        speedState is SpeedData.SpeedChanged -> "✅ Compliant Speed Range"
+                                        else -> "🛰️ Awaiting GPS Fix..."
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                 )
-                                Text("Will autonomously push to Supabase via JobScheduler", style = MaterialTheme.typography.bodySmall)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Autonomous offline telemetry sync enabled", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -93,9 +117,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initializeFleetTracking() {
-        // Step 2: Inject custom regulatory speeds instead of consumer profiles
-        val truckMaxSpeedKmh = 80.0
-        val truckMinSpeedKmh = 20.0
+        // Step 2: Inject custom regulatory speeds instead of consumer profiles (Float values)
+        val truckMaxSpeedKmh = 80.0f
+        val truckMinSpeedKmh = 20.0f
 
         SpeedAssistant.with(this, fleetEnterpriseJwt)
             .setWarningSpeedThreshold(truckMaxSpeedKmh)

@@ -20,8 +20,8 @@ import com.vegsahayyak.speedcore.api.DrivingProfile
 
 class MainActivity : ComponentActivity() {
 
-    // Your commercial B2B license key
-    private val enterpriseJwt = "eyJhbGciOiJSUzI1NiIs..."
+    // Commercial B2B license key for Background Service sample
+    private val enterpriseJwt = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbGllbnRfaWQiOiJWZWcgU2FoYXl5YWsgU2FtcGxlIC0gQmFja2dyb3VuZCBTZXJ2aWNlIiwicGFja2FnZV9uYW1lIjoiY29tLnZlZ3NhaGF5eWFrLnNhbXBsZXMuYmFja2dyb3VuZCIsImV4cCI6MjA4Mjc1ODQwMCwibW9kdWxlcyI6WyJzcGVlZC1jb3JlIiwic3BlZWQtYXV0b3N0YXJ0Il0sIm1heF9kZXZpY2VzIjotMSwibWF4X29mZmxpbmVfZGF5cyI6MzY1LCJ1bmxpbWl0ZWQiOnRydWUsImlzcyI6InZlZ19zYWhheXlha19hZG1pbiIsImlhdCI6MTc5MTk5OTk2Nn0.oEyLb9tMHHGDB8IqeMF-cTAStEnvWkbEUydikVdUvOWooplo7hH-QBF7kVNJZsq3hx2ZGHmBUtzGL6w91jBfx5hKBgZQU3aoODJKGxGVdkdRr6GOZOz_wKFmuP8LMsNQlLA7qDIxx9Ohww762G7lA0xBQujOp-nNtvenYCDaXMPrKdUzbIJLKC04XZW1cUcWsTqqaUXN6T6IW1g4zgkNxyc2282LqUuJrBXN1W8T9gnck3qJZw3Ae1nHdkt4v3QNDv9Ii6WCWm-W4wcYfchCWAeCFzzkhdXmOOm2xQ25-HemxEa49dPa_ulmCDir9rrZRk2lwafBqnB3FwKC_wmyMg"
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -97,13 +97,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initializeHeadlessSdk() {
-        // 1. Initialize the SDK but do NOT start tracking
+        // 1. Initialize the SDK
         SpeedAssistant.with(this, enterpriseJwt)
             .setDrivingProfile(DrivingProfile.CarHighway)
             
         // 2. Hand control over to the AutoStart manager
-        AutoStartManager.registerDriveDetection(this)
-            
-        Toast.makeText(this, "Listening for driving activity in background!", Toast.LENGTH_LONG).show()
+        AutoStartManager.enable(
+            context = this,
+            onPermissionRequired = {
+                Toast.makeText(this, "Activity Recognition permission needed", Toast.LENGTH_SHORT).show()
+            },
+            onSuccess = {
+                Toast.makeText(this, "Listening for driving activity in background!", Toast.LENGTH_LONG).show()
+            },
+            onError = { err ->
+                Toast.makeText(this, "AutoStart error: ${err.message}", Toast.LENGTH_LONG).show()
+            }
+        )
     }
 }

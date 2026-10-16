@@ -1,3 +1,7 @@
+import java.util.Properties
+import java.io.File
+import java.io.FileInputStream
+
 pluginManagement {
     repositories {
         google()
@@ -18,12 +22,13 @@ dependencyResolutionManagement {
             name = "VegSahayyakSDK"
             url = uri("https://maven.pkg.github.com/VegSahayyak/veg-sahayyak-sdk")
             credentials {
-                val localProps = java.util.Properties().apply {
-                    val file = rootProject.file("local.properties")
-                    if (file.exists()) file.inputStream().use { load(it) }
+                val localProps = Properties()
+                val localPropsFile = File(rootDir, "local.properties")
+                if (localPropsFile.exists()) {
+                    localProps.load(FileInputStream(localPropsFile))
                 }
-                username = System.getenv("GITHUB_ACTOR") ?: localProps.getProperty("gpr.user")
-                password = System.getenv("GITHUB_TOKEN") ?: localProps.getProperty("gpr.key")
+                username = System.getenv("GITHUB_ACTOR") ?: localProps.getProperty("gpr.user") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: localProps.getProperty("gpr.key") ?: ""
             }
         }
     }
